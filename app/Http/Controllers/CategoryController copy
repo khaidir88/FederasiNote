@@ -1,0 +1,400 @@
+<?php
+// app/Http/Controllers/CategoryController.php
+
+namespace App\Http\Controllers;
+
+use App\Models\Category;
+use Illuminate\Http\Request;
+use Illuminate\Support\Str;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use App\Models\News;
+
+class CategoryController extends Controller
+{
+
+    public function __construct()
+    {
+        $this->middleware('auth')->except(['show']);
+    }
+    /**
+     * Display a listing of the resource.
+     */
+    public function index()
+    {
+        // $categories = Category::withCount('articles')
+        //     ->orderBy('name')
+        //     ->paginate(10);
+        $categories = Category::withCount('news')
+            ->orderByRaw("CASE WHEN parent_id IS NULL THEN id ELSE parent_id END")
+            ->orderBy('parent_id')
+            ->get();
+
+        return view('category.index', compact('categories'));
+    }
+
+    /**
+     * Show the form for creating a new resource.
+     */
+    // public function create()
+    // {
+    //     return view('category.create');
+    // }
+    public function create()
+    {
+        $categories = \App\Models\Category::orderBy('name')->get();
+
+        return view('category.create', [
+            'categories' => $categories
+        ]);
+    }
+
+    /**
+     * Store a newly created resource in storage.
+     */
+    public function store(Request $request)
+    {
+        $request->validate([
+            'name' => 'required|string|max:255|unique:categories,name',
+            'description' => 'nullable|string',
+            'link' => 'nullable|string|max:255',
+            'color' => 'required|string|size:7',
+            'parent_id' => 'nullable|exists:categories,id', // penting!
+        ]);
+
+        Category::create([
+            'name' => $request->name,
+            'slug' => Str::slug($request->name),
+            'link' => $request->link,
+            'description' => $request->description,
+            'color' => $request->color,
+            'parent_id' => $request->parent_id ?? null, // simpan parent
+        ]);
+
+        return redirect()->route('categories.index')
+            ->with('success', 'Kategori berhasil dibuat!');
+    }
+
+    // public function store(Request $request)
+    // {
+    //     $request->validate([
+    //         'name' => 'required|string|max:255|unique:categories',
+    //         'description' => 'nullable|string',
+    //         'color' => 'required|string|size:7',
+    //     ]);
+
+    //     Category::create([
+    //         'name' => $request->name,
+    //         'slug' => Str::slug($request->name),
+    //         'description' => $request->description,
+    //         'color' => $request->color,
+    //     ]);
+
+    //     return redirect()->route('categories.index')
+    //         ->with('success', 'Kategori berhasil dibuat!');
+    // }
+
+    /**
+     * Display the specified resource.
+     */
+
+
+    public function show(string $parent, ?string $child = null)
+
+    {
+        // 🔹 Ambil parent kategori + children
+        $parentCategory = Category::with('children')
+            ->where('slug', $parent)
+            ->whereNull('parent_id')
+            ->firstOrFail();
+
+        if (is_null($child)) {
+
+            // Ambil semua child ID (jika ada)
+            $childIds = $parentCategory->children->pluck('id');
+
+            // Jika parent tidak punya sub kategori
+            $articles = News::when($childIds->isNotEmpty(), function ($q) use ($childIds) {
+                $q->whereIn('category_id', $childIds);
+            }, function ($q) use ($parentCategory) {
+                $q->where('category_id', $parentCategory->id);
+            })
+                ->latest()
+                ->paginate(10);
+
+            return view('news.category-parent', [
+                'parent'   => $parentCategory,
+                'category' => null,
+                'articles' => $articles
+            ]);
+        }
+
+
+        $childCategory = Category::where('slug', $child)
+            ->where('parent_id', $parentCategory->id)
+            ->firstOrFail();
+
+        $articles = News::where('category_id', $childCategory->id)
+            ->where('status', 'published')
+            ->latest()
+            ->paginate(3);
+
+        return view('news.category-child', [
+            'parent'   => $parentCategory,
+            'category' => $childCategory,
+            'articles' => $articles
+        ]);
+    }
+
+
+    /**
+     * Show the form for editing the specified resource.
+     */
+    public function edit(Category $category)
+    {
+        // Debug: Tampilkan data
+        // dd($category); // Uncomment untuk debug kategori yang diedit
+
+        $availableCategories = Category::where('id', '!=', $category->id)
+            ->with('parent')
+            ->orderBy('name')
+            ->get();
+
+        // Debug: Tampilkan kategori yang tersedia
+        // dd($availableCategories); // Uncomment untuk debug
+
+        return view('categories.edit', [
+            'category' => $category,
+            'categories' => $availableCategories
+        ]);
+    }
+   
+    //  public function edit(Category $category)
+    // {
+    //     // Eager load parent untuk menghindari N+1
+    //     $category->load('parent');
+
+    //     // Ambil semua kategori kecuali diri sendiri
+    //     $availableCategories = Category::where('id', '!=', $category->id)
+    //         ->with('parent') // Eager load parent untuk menghitung level
+    //         ->orderBy('name')
+    //         ->get();
+
+    //     return view('categories.edit', [
+    //         'category' => $category,
+    //         'categories' => $availableCategories
+    //     ]);
+    // }
+
+    /**
+     * Update the specified resource in storage.
+     */
+    public function update(Request $request, Category $category)
+    {
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'link' => 'nullable|string|max:255',
+            'color' => 'required|string|regex:/^#[0-9A-F]{6}$/i',
+            'parent_id' => 'nullable|exists:categories,id',
+            'is_active' => 'boolean'
+        ]);
+
+        // Ambil data dari request
+        $data = $request->only(['name', 'description', 'color', 'parent_id', 'is_active']);
+
+        // Handle jika menggunakan color_hex input
+        if ($request->has('color_hex') && $request->color_hex) {
+            $data['color'] = strtoupper($request->color_hex);
+        }
+
+        // 1. Cegah circular reference: tidak boleh memilih diri sendiri
+        if ($data['parent_id'] == $category->id) {
+            return back()->withErrors(['parent_id' => 'Tidak bisa memilih diri sendiri sebagai parent.']);
+        }
+
+        // 2. Cegah memilih descendant sebagai parent
+        if ($data['parent_id']) {
+            $isDescendant = $this->isDescendant($category, $data['parent_id']);
+
+            if ($isDescendant) {
+                return back()->withErrors(['parent_id' => 'Tidak bisa memilih sub-kategori (descendant) sebagai parent.']);
+            }
+        }
+
+        // 3. Cek apakah kategori menjadi parent dari parent-nya sendiri (circular reference lain)
+        if ($category->parent_id && $category->parent_id == $data['parent_id']) {
+            // Tidak ada perubahan, lanjutkan
+        } else if ($category->parent_id) {
+            // Jika sebelumnya punya parent dan parent berubah, perlu validasi tambahan
+            $willCreateCircular = $this->willCreateCircularReference($category, $data['parent_id']);
+
+            if ($willCreateCircular) {
+                return back()->withErrors(['parent_id' => 'Perubahan ini akan membuat circular reference.']);
+            }
+        }
+
+        // 4. Update slug jika nama berubah
+        if ($category->name !== $data['name']) {
+            $data['slug'] = $this->generateUniqueSlug($data['name'], $category->id);
+        }
+
+        // 5. Update kategori
+        $category->update($data);
+
+        // 6. Update slug untuk semua children jika parent berubah
+        if ($category->wasChanged('parent_id')) {
+            $this->updateChildrenSlugs($category);
+        }
+
+        return redirect()->route('categories.index')
+            ->with('success', 'Kategori "' . $category->name . '" berhasil diperbarui.');
+    }
+
+    /**
+     * Cek apakah suatu kategori adalah descendant dari kategori lain
+     */
+    private function isDescendant(Category $category, $potentialParentId)
+    {
+        // Jika kategori ini adalah potential parent, return false
+        if ($category->id == $potentialParentId) {
+            return false;
+        }
+
+        // Cek semua children secara recursive
+        $children = $category->children;
+
+        foreach ($children as $child) {
+            if ($child->id == $potentialParentId) {
+                return true;
+            }
+
+            if ($this->isDescendant($child, $potentialParentId)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Cek apakah perubahan akan membuat circular reference
+     */
+    private function willCreateCircularReference(Category $category, $newParentId)
+    {
+        if (!$newParentId) {
+            return false; // Menjadi root, tidak ada circular reference
+        }
+
+        // Jika newParent adalah category itu sendiri
+        if ($newParentId == $category->id) {
+            return true;
+        }
+
+        // Dapatkan newParent
+        $newParent = Category::find($newParentId);
+
+        if (!$newParent) {
+            return false;
+        }
+
+        // Cek apakah category adalah ancestor dari newParent
+        $current = $newParent;
+        while ($current->parent_id) {
+            if ($current->parent_id == $category->id) {
+                return true; // Circular reference akan terjadi
+            }
+            $current = Category::find($current->parent_id);
+        }
+
+        return false;
+    }
+
+    /**
+     * Generate unique slug
+     */
+    private function generateUniqueSlug($name, $exceptId = null)
+    {
+        $slug = \Illuminate\Support\Str::slug($name);
+        $originalSlug = $slug;
+        $counter = 1;
+
+        while (Category::where('slug', $slug)
+            ->when($exceptId, function ($query) use ($exceptId) {
+                return $query->where('id', '!=', $exceptId);
+            })
+            ->exists()
+        ) {
+            $slug = $originalSlug . '-' . $counter;
+            $counter++;
+        }
+
+        return $slug;
+    }
+
+    /**
+     * Update slugs untuk semua children ketika parent slug berubah
+     */
+    private function updateChildrenSlugs(Category $category)
+    {
+        foreach ($category->children as $child) {
+            // Regenerate slug untuk child berdasarkan full hierarchy
+            $child->slug = $this->generateUniqueSlug($child->name, $child->id);
+            $child->saveQuietly(); // Save tanpa trigger events
+
+            // Update children secara recursive
+            $this->updateChildrenSlugs($child);
+        }
+    }
+    // public function update(Request $request, Category $category)
+    // {
+    //     $request->validate([
+    //         'name' => 'required|string|max:255',
+    //         'description' => 'nullable|string',
+    //         'color' => 'required|string|regex:/^#[0-9A-F]{6}$/i',
+    //         'parent_id' => 'nullable|exists:categories,id',
+    //         'is_active' => 'boolean'
+    //     ]);
+
+    //     // Cegah circular reference
+    //     if ($request->parent_id == $category->id) {
+    //         return back()->withErrors(['parent_id' => 'Tidak bisa memilih diri sendiri sebagai parent.']);
+    //     }
+
+    //     // Cegah memilih child sebagai parent
+    //     $isDescendant = false;
+    //     $child = $category;
+    //     while ($child->parent) {
+    //         if ($child->parent->id == $request->parent_id) {
+    //             $isDescendant = true;
+    //             break;
+    //         }
+    //         $child = $child->parent;
+    //     }
+
+    //     if ($isDescendant) {
+    //         return back()->withErrors(['parent_id' => 'Tidak bisa memilih descendant sebagai parent.']);
+    //     }
+
+    //     $category->update($request->all());
+
+    //     return redirect()->route('categories.index')
+    //         ->with('success', 'Kategori berhasil diperbarui.');
+    // }
+
+    /**
+     * Remove the specified resource from storage.
+     */
+    public function destroy(Category $category)
+    {
+        // Cek apakah kategori memiliki artikel
+        if ($category->articles()->count() > 0) {
+            return redirect()->route('categories.index')
+                ->with('error', 'Tidak dapat menghapus kategori yang memiliki artikel!');
+        }
+
+        $category->delete();
+
+        return redirect()->route('categories.index')
+            ->with('success', 'Kategori berhasil dihapus!');
+    }
+}

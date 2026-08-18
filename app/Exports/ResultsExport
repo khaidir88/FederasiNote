@@ -1,0 +1,33 @@
+<?php
+
+namespace App\Exports;
+
+use Illuminate\Contracts\View\View;
+use Maatwebsite\Excel\Concerns\FromView;
+
+class ResultsExport implements FromView
+{
+    protected $results;
+
+    /**
+     * Constructor untuk menerima data hasil skrining.
+     *
+     * @param \Illuminate\Support\Collection $results
+     */
+    public function __construct($results)
+    {
+        $this->results = $results;
+    }
+
+    /**
+     * Mengembalikan view untuk export Excel.
+     *
+     * @return View
+     */
+    public function view(): View
+    {
+        return view('exports.results', [
+            'results' => $this->results
+        ]);
+    }
+}

@@ -1,0 +1,79 @@
+<ul class="sidebar-nav text-sm" x-data="{ open: true }">
+
+    <!-- Dashboard -->
+    <li class="sidebar-item">
+        <a href="{{ route('dashboard') }}" class="sidebar-link pl-4 flex items-center space-x-2">
+            <i class="fas fa-home"></i>
+            <span x-show="open">Dashboard</span>
+        </a>
+    </li>
+
+    <li class="px-4 py-2 text-xs uppercase font-bold text-gray-500 border-t mt-3" x-show="open">User</li>
+
+
+    <!-- Pages -->
+    @hasanyrole('Admin|Super Admin')
+    @can('View Berita')
+    <li class="sidebar-item {{ request()->is('berita*') ? 'active text-blue-600 font-semibold' : '' }}">
+        <a href="{{ route('berita.index') }}" class="sidebar-link pl-4 flex items-center space-x-2">
+            <i class="far fa-images"></i>
+            <span x-show="open">Berita</span>
+        </a>
+    </li>
+    @endcan
+    @can('View Gallery')
+    <li class="sidebar-item {{ request()->is('gallery*') ? 'active text-blue-600 font-semibold' : '' }}">
+        <a href="{{ route('gallery.index') }}" class="sidebar-link pl-4 flex items-center space-x-2">
+            <i class="far fa-images"></i>
+            <span x-show="open">Gallery</span>
+        </a>
+    </li>
+    @endcan
+    @can('View Profile')
+    <li class="sidebar-item {{ request()->is('probio*') ? 'active text-blue-600 font-semibold' : '' }}">
+        <a href="{{ route('probio.index') }}" class="sidebar-link pl-4 flex items-center space-x-2">
+            <i class="far fa-id-card"></i>
+            <span x-show="open">Profile</span>
+        </a>
+    </li>
+    @endcan
+
+    <!-- Users -->
+    <li class="px-4 py-2 text-xs uppercase font-bold text-gray-500 border-t mt-3" x-show="open">Users</li>
+    @can('View User')
+    <li class="sidebar-item {{ request()->is('users*') ? 'active text-blue-600 font-semibold' : '' }}">
+        <a href="{{ route('users.index') }}" class="sidebar-link pl-4 flex items-center space-x-2">
+            <i class="fa fa-id-badge"></i>
+            <span x-show="open">Users</span>
+        </a>
+    </li>
+    @endcan
+    @can('View Role')
+    <li class="sidebar-item {{ request()->is('roles*') ? 'active text-blue-600 font-semibold' : '' }}">
+        <a href="{{ route('roles.index') }}" class="sidebar-link pl-4 flex items-center space-x-2">
+            <i class="fas fa-user-shield"></i>
+            <span x-show="open">Roles</span>
+        </a>
+    </li>
+    @endcan
+    @can('View Permission')
+    <li class="sidebar-item {{ request()->is('permissions*') ? 'active text-blue-600 font-semibold' : '' }}">
+        <a href="{{ route('permissions.index') }}" class="sidebar-link pl-4 flex items-center space-x-2">
+            <i class="fas fa-user-lock"></i>
+            <span x-show="open">Permissions</span>
+        </a>
+    </li>
+    @endcan
+
+    @can('View Category')
+    <li class="sidebar-item {{ request()->is('category*') ? 'active text-blue-600 font-semibold' : '' }}">
+        <a href="{{ route('category.index') }}" class="sidebar-link pl-4 flex items-center space-x-2">
+            <i class="far fa-list-alt"></i>
+            <span x-show="open">Category</span>
+        </a>
+    </li>
+    @endcan
+
+
+    @endhasanyrole
+</ul>
